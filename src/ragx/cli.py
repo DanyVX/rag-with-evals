@@ -5,6 +5,7 @@ from pathlib import Path
 import typer
 
 from ragx.ingest.service import ingest_paths
+from ragx.pipeline import answer, build_index, load_index
 from ragx.provenance import collect_environment
 from ragx.settings import Settings
 
@@ -36,3 +37,19 @@ def ingest(path: list[Path]) -> None:
     typer.echo(f"documents={len(result.documents)} duplicates_skipped={result.duplicates_skipped}")
     for warning in result.warnings:
         typer.echo(f"warning: {warning.source}: {warning.message}")
+
+
+@app.command()
+def index(path: list[Path], output: Path = Path("cache/index.json"), chunk_size: int = 256) -> None:
+    """Build a persisted local index from local documents."""
+    typer.echo(build_index(path, output, chunk_size=chunk_size))
+
+
+@app.command()
+def ask(query: str, index_path: Path = Path("cache/index.json"), top_k: int = 3) -> None:
+    """Ask an evidence-only question of a persisted index."""
+    response, hits = answer(load_index(index_path), query, top_k=top_k)
+    typer.echo(response)
+    for number, hit in enumerate(hits, start=1):
+        source = hit.chunk.metadata.get("title", hit.chunk.document_hash)
+        typer.echo(f"[{number}] {source} score={hit.score:.3f}")
