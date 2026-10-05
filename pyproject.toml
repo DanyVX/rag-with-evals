@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rag-with-evals"
+version = "0.0.1"
+description = "A modular RAG system built to measure retrieval and generation quality honestly."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = { text = "MIT" }
+authors = [{ name = "Dany" }]
+dependencies = [
+  "fastapi>=0.115,<1",
+  "numpy>=1.26,<3",
+  "pydantic>=2.10,<3",
+  "pydantic-settings>=2.6,<3",
+  "typer>=0.15,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "detect-secrets>=1.5,<2",
+  "mypy>=1.14,<2",
+  "pip-audit>=2.8,<3",
+  "pre-commit>=4.0,<5",
+  "pytest>=8.3,<9",
+  "pytest-cov>=6,<8",
+  "ruff>=0.9,<1",
+]
+
+[project.scripts]
+ragx = "ragx.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ragx"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers --cov=ragx --cov-report=term-missing"
+testpaths = ["tests"]
+markers = [
+  "slow: requires non-trivial local resources",
+  "gpu: requires a CUDA-capable GPU",
+  "real_api: requires an explicitly enabled external provider",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["ragx"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src/ragx"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+
