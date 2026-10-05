@@ -4,6 +4,8 @@ from pathlib import Path
 
 import typer
 
+from ragx.eval.report import write_result
+from ragx.eval.stats import bootstrap_mean_ci
 from ragx.ingest.service import ingest_paths
 from ragx.pipeline import answer, build_index, load_index
 from ragx.provenance import collect_environment
@@ -25,9 +27,14 @@ def doctor() -> None:
 
 @app.command()
 def benchmark() -> None:
-    """Reserve a stable command name for the evaluation harness."""
-    typer.echo("Benchmarking is introduced with the evaluation milestone.")
-    raise typer.Exit(code=2)
+    """Write a deterministic smoke benchmark artifact for CI plumbing."""
+    mean, lower, upper = bootstrap_mean_ci([1.0])
+    write_result(
+        Path("results/smoke.json"),
+        {"smoke_hit_at_1": mean, "ci95": [lower, upper], "n": 1},
+        Path.cwd(),
+    )
+    typer.echo("Wrote results/smoke.json")
 
 
 @app.command()
