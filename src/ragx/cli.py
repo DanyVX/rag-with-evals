@@ -4,6 +4,7 @@ from pathlib import Path
 
 import typer
 
+from ragx.ingest.service import ingest_paths
 from ragx.provenance import collect_environment
 from ragx.settings import Settings
 
@@ -26,3 +27,12 @@ def benchmark() -> None:
     """Reserve a stable command name for the evaluation harness."""
     typer.echo("Benchmarking is introduced with the evaluation milestone.")
     raise typer.Exit(code=2)
+
+
+@app.command()
+def ingest(path: list[Path]) -> None:
+    """Ingest supported local documents and report safety-relevant skips."""
+    result = ingest_paths(path)
+    typer.echo(f"documents={len(result.documents)} duplicates_skipped={result.duplicates_skipped}")
+    for warning in result.warnings:
+        typer.echo(f"warning: {warning.source}: {warning.message}")
