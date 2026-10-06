@@ -13,6 +13,8 @@ REQUIRED = [
     Path("results/final/injection_eval.json"),
     Path("results/final/judge_validation.json"),
     Path("results/final/FAILURE_ANALYSIS.md"),
+    Path("results/experiments/experiment_summary.json"),
+    Path("results/experiments/compact_results.jsonl"),
     Path("results/human/rereview_consistency.json"),
 ]
 
@@ -51,6 +53,25 @@ def main() -> None:
         human.get("generation", {}).get("citation_recall", {}),
         "citation recall",
     )
+
+    experiments = json.loads(
+        Path("results/experiments/experiment_summary.json").read_text(encoding="utf-8")
+    )
+    if not experiments.get("complete"):
+        raise SystemExit("release gate failed; controlled experiment grid is incomplete")
+    if int(experiments.get("configs_completed", 0)) != int(
+        experiments.get("configs_expected_full", -1)
+    ):
+        raise SystemExit("release gate failed; experiment result count does not match full grid")
+    compact_lines = [
+        line
+        for line in Path("results/experiments/compact_results.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    if len(compact_lines) != int(experiments["configs_expected_full"]):
+        raise SystemExit("release gate failed; compact experiment evidence is incomplete")
 
     judge = json.loads(
         Path("results/final/judge_validation.json").read_text(encoding="utf-8")
