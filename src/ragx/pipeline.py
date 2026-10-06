@@ -22,10 +22,11 @@ class AskResult:
     completion_tokens: int
     cost_usd: float
     abstained: bool
+    preprocess_ms: float = 0.0
 
     @property
     def total_ms(self) -> float:
-        return self.retrieval_ms + self.rerank_ms + self.generation_ms
+        return self.preprocess_ms + self.retrieval_ms + self.rerank_ms + self.generation_ms
 
 
 def answer_with_context(
@@ -33,8 +34,12 @@ def answer_with_context(
     hits: list[SearchHit],
     *,
     provider: LLMProvider,
+    preprocess_ms: float = 0.0,
     retrieval_ms: float = 0.0,
     rerank_ms: float = 0.0,
+    prior_prompt_tokens: int = 0,
+    prior_completion_tokens: int = 0,
+    prior_cost_usd: float = 0.0,
 ) -> AskResult:
     prompt = build_prompt(question, hits)
     generated_at = perf_counter()
@@ -42,16 +47,17 @@ def answer_with_context(
     generation_ms = (perf_counter() - generated_at) * 1000
     citations = validate_citations(answer, len(hits))
     usage = getattr(provider, "last_usage", TokenUsage())
-    cost_usd = float(getattr(provider, "last_cost_usd", 0.0))
+    generation_cost_usd = float(getattr(provider, "last_cost_usd", 0.0))
     return AskResult(
         answer=answer,
         citations=citations,
         retrieved=hits,
+        preprocess_ms=preprocess_ms,
         retrieval_ms=retrieval_ms,
         rerank_ms=rerank_ms,
         generation_ms=generation_ms,
-        prompt_tokens=usage.input_tokens,
-        completion_tokens=usage.output_tokens,
-        cost_usd=cost_usd,
+        prompt_tokens=prior_prompt_tokens + usage.input_tokens,
+        completion_tokens=prior_completion_tokens + usage.output_tokens,
+        cost_usd=prior_cost_usd + generation_cost_usd,
         abstained=ABSTENTION in answer.lower(),
     )
