@@ -25,7 +25,6 @@ def answer_with_context(
     *,
     provider: LLMProvider,
 ) -> AskResult:
-    started = perf_counter()
     retrieval_ms = 0.0
     prompt = build_prompt(question, hits)
     generated_at = perf_counter()
