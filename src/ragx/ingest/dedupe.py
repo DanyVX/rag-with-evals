@@ -45,8 +45,8 @@ def hamming_distance(a: int, b: int) -> int:
 
 
 def _band_keys(fingerprint: int) -> list[tuple[int, int]]:
-    mask = (1 << 16) - 1
-    return [(band, (fingerprint >> (band * 16)) & mask) for band in range(4)]
+    mask = (1 << 8) - 1
+    return [(band, (fingerprint >> (band * 8)) & mask) for band in range(8)]
 
 
 def deduplicate(
