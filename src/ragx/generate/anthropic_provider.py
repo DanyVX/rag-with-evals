@@ -47,7 +47,6 @@ class AnthropicProvider:
     def generate(self, prompt: str, *, temperature: float = 0.0, seed: int | None = 0) -> str:
         del seed
         maximum_cost = self._maximum_cost(prompt)
-        reserved = self.cost_tracker.reserve(maximum_cost)
         headers = {
             "x-api-key": self.api_key,
             "anthropic-version": "2023-06-01",
@@ -60,56 +59,73 @@ class AnthropicProvider:
             "messages": [{"role": "user", "content": prompt}],
         }
         last_error: Exception | None = None
-        try:
-            for attempt in range(self.max_retries + 1):
-                try:
-                    response = httpx.post(
-                        "https://api.anthropic.com/v1/messages",
-                        headers=headers,
-                        json=payload,
-                        timeout=self.timeout_seconds,
-                    )
-                    if 400 <= response.status_code < 500:
+        accumulated_cost = 0.0
+
+        for attempt in range(self.max_retries + 1):
+            reserved = self.cost_tracker.reserve(maximum_cost)
+            try:
+                response = httpx.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers=headers,
+                    json=payload,
+                    timeout=self.timeout_seconds,
+                )
+                if 400 <= response.status_code < 500:
+                    try:
                         response.raise_for_status()
-                    response.raise_for_status()
-                    data = response.json()
-                    blocks = data.get("content", [])
-                    text = "".join(
-                        block.get("text", "") for block in blocks if block.get("type") == "text"
+                    finally:
+                        self.cost_tracker.cancel_reservation(reserved)
+                    raise AssertionError("unreachable")
+                response.raise_for_status()
+                data = response.json()
+                blocks = data.get("content", [])
+                text = "".join(
+                    block.get("text", "") for block in blocks if block.get("type") == "text"
+                )
+                if not text:
+                    raise RuntimeError("provider returned empty output")
+
+                raw_usage = data.get("usage") or {}
+                if raw_usage:
+                    usage = TokenUsage(
+                        input_tokens=int(raw_usage.get("input_tokens", 0)),
+                        output_tokens=int(raw_usage.get("output_tokens", 0)),
                     )
-                    if not text:
-                        raise RuntimeError("provider returned empty output")
-                    raw_usage = data.get("usage") or {}
-                    if raw_usage:
-                        usage = TokenUsage(
-                            input_tokens=int(raw_usage.get("input_tokens", 0)),
-                            output_tokens=int(raw_usage.get("output_tokens", 0)),
-                        )
-                        actual = calculate_cost_usd(
-                            usage,
-                            input_usd_per_million=self.input_usd_per_million,
-                            output_usd_per_million=self.output_usd_per_million,
-                        )
-                    else:
-                        usage = TokenUsage(
-                            input_tokens=estimate_input_token_upper_bound(prompt),
-                            output_tokens=self.max_output_tokens,
-                        )
-                        actual = maximum_cost
-                    self.cost_tracker.commit(actual, reserved_usd=reserved)
-                    reserved = 0.0
-                    self.last_usage = usage
-                    self.last_cost_usd = actual
-                    return text
-                except httpx.HTTPStatusError as exc:
-                    if 400 <= exc.response.status_code < 500:
-                        raise
-                    last_error = exc
-                except (httpx.TimeoutException, httpx.NetworkError) as exc:
-                    last_error = exc
-                if attempt < self.max_retries:
-                    time.sleep((2**attempt) * 0.25 + random.uniform(0.0, 0.1))
-            raise RuntimeError("provider failed after retries") from last_error
-        finally:
-            if reserved:
-                self.cost_tracker.cancel_reservation(reserved)
+                    actual = calculate_cost_usd(
+                        usage,
+                        input_usd_per_million=self.input_usd_per_million,
+                        output_usd_per_million=self.output_usd_per_million,
+                    )
+                else:
+                    usage = TokenUsage(
+                        input_tokens=estimate_input_token_upper_bound(prompt),
+                        output_tokens=self.max_output_tokens,
+                    )
+                    actual = maximum_cost
+
+                self.cost_tracker.commit(actual, reserved_usd=reserved)
+                accumulated_cost += actual
+                self.last_usage = usage
+                self.last_cost_usd = accumulated_cost
+                return text
+
+            except httpx.HTTPStatusError as exc:
+                if 400 <= exc.response.status_code < 500:
+                    raise
+                last_error = exc
+                self.cost_tracker.commit(maximum_cost, reserved_usd=reserved)
+                accumulated_cost += maximum_cost
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_error = exc
+                self.cost_tracker.commit(maximum_cost, reserved_usd=reserved)
+                accumulated_cost += maximum_cost
+            except RuntimeError:
+                self.cost_tracker.commit(maximum_cost, reserved_usd=reserved)
+                accumulated_cost += maximum_cost
+                raise
+
+            if attempt < self.max_retries:
+                time.sleep((2**attempt) * 0.25 + random.uniform(0.0, 0.1))
+
+        self.last_cost_usd = accumulated_cost
+        raise RuntimeError("provider failed after retries") from last_error
