@@ -77,10 +77,6 @@ class OpenAICompatibleProvider:
 
     def generate(self, prompt: str, *, temperature: float = 0.0, seed: int | None = 0) -> str:
         maximum_cost = self._maximum_cost(prompt)
-        reserved = 0.0
-        if not self.zero_cost_local:
-            reserved = self.cost_tracker.reserve(maximum_cost)
-
         payload = {
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
@@ -91,56 +87,80 @@ class OpenAICompatibleProvider:
             payload["seed"] = seed
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         last_error: Exception | None = None
-        try:
-            for attempt in range(self.max_retries + 1):
-                try:
-                    response = httpx.post(
-                        f"{self.base_url}/chat/completions",
-                        json=payload,
-                        headers=headers,
-                        timeout=self.timeout_seconds,
-                    )
-                    if 400 <= response.status_code < 500:
+        accumulated_cost = 0.0
+
+        for attempt in range(self.max_retries + 1):
+            reserved = 0.0
+            if not self.zero_cost_local:
+                reserved = self.cost_tracker.reserve(maximum_cost)
+
+            try:
+                response = httpx.post(
+                    f"{self.base_url}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=self.timeout_seconds,
+                )
+                if 400 <= response.status_code < 500:
+                    try:
                         response.raise_for_status()
-                    response.raise_for_status()
-                    data = response.json()
-                    text = data["choices"][0]["message"]["content"]
-                    if not text:
-                        raise RuntimeError("provider returned empty output")
-                    raw_usage = data.get("usage") or {}
-                    if raw_usage:
-                        usage = TokenUsage(
-                            input_tokens=int(raw_usage.get("prompt_tokens", 0)),
-                            output_tokens=int(raw_usage.get("completion_tokens", 0)),
-                        )
-                        actual = calculate_cost_usd(
-                            usage,
-                            input_usd_per_million=self.input_usd_per_million,
-                            output_usd_per_million=self.output_usd_per_million,
-                        )
-                    else:
-                        usage = TokenUsage(
-                            input_tokens=estimate_input_token_upper_bound(prompt),
-                            output_tokens=self.max_output_tokens,
-                        )
-                        actual = maximum_cost
-                    if self.zero_cost_local:
-                        actual = 0.0
-                    else:
-                        self.cost_tracker.commit(actual, reserved_usd=reserved)
-                        reserved = 0.0
-                    self.last_usage = usage
-                    self.last_cost_usd = actual
-                    return str(text)
-                except httpx.HTTPStatusError as exc:
-                    if 400 <= exc.response.status_code < 500:
-                        raise
-                    last_error = exc
-                except (httpx.TimeoutException, httpx.NetworkError) as exc:
-                    last_error = exc
-                if attempt < self.max_retries:
-                    time.sleep((2**attempt) * 0.25 + random.uniform(0.0, 0.1))
-            raise RuntimeError("provider failed after retries") from last_error
-        finally:
-            if reserved:
-                self.cost_tracker.cancel_reservation(reserved)
+                    finally:
+                        if reserved:
+                            self.cost_tracker.cancel_reservation(reserved)
+                    raise AssertionError("unreachable")
+                response.raise_for_status()
+                data = response.json()
+                text = data["choices"][0]["message"]["content"]
+                if not text:
+                    raise RuntimeError("provider returned empty output")
+
+                raw_usage = data.get("usage") or {}
+                if raw_usage:
+                    usage = TokenUsage(
+                        input_tokens=int(raw_usage.get("prompt_tokens", 0)),
+                        output_tokens=int(raw_usage.get("completion_tokens", 0)),
+                    )
+                    actual = calculate_cost_usd(
+                        usage,
+                        input_usd_per_million=self.input_usd_per_million,
+                        output_usd_per_million=self.output_usd_per_million,
+                    )
+                else:
+                    usage = TokenUsage(
+                        input_tokens=estimate_input_token_upper_bound(prompt),
+                        output_tokens=self.max_output_tokens,
+                    )
+                    actual = maximum_cost
+
+                if self.zero_cost_local:
+                    actual = 0.0
+                else:
+                    self.cost_tracker.commit(actual, reserved_usd=reserved)
+                accumulated_cost += actual
+                self.last_usage = usage
+                self.last_cost_usd = accumulated_cost
+                return str(text)
+
+            except httpx.HTTPStatusError as exc:
+                if 400 <= exc.response.status_code < 500:
+                    raise
+                last_error = exc
+                if reserved:
+                    self.cost_tracker.commit(maximum_cost, reserved_usd=reserved)
+                    accumulated_cost += maximum_cost
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_error = exc
+                if reserved:
+                    self.cost_tracker.commit(maximum_cost, reserved_usd=reserved)
+                    accumulated_cost += maximum_cost
+            except RuntimeError:
+                if reserved:
+                    self.cost_tracker.commit(maximum_cost, reserved_usd=reserved)
+                    accumulated_cost += maximum_cost
+                raise
+
+            if attempt < self.max_retries:
+                time.sleep((2**attempt) * 0.25 + random.uniform(0.0, 0.1))
+
+        self.last_cost_usd = accumulated_cost
+        raise RuntimeError("provider failed after retries") from last_error
