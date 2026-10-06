@@ -27,11 +27,24 @@ def hybrid_rrf(
 ) -> list[SearchHit]:
     scores: dict[str, float] = defaultdict(float)
     chunks = {}
-    for hits in (dense, sparse):
+    best_rank: dict[str, int] = {}
+    dense_score: dict[str, float] = {}
+    for source_index, hits in enumerate((dense, sparse)):
         for rank, hit in enumerate(hits, 1):
             scores[hit.chunk.id] += 1.0 / (rrf_k + rank)
             chunks[hit.chunk.id] = hit.chunk
-    ranked = sorted(scores, key=lambda cid: (-scores[cid], cid))[:k]
+            best_rank[hit.chunk.id] = min(best_rank.get(hit.chunk.id, rank), rank)
+            if source_index == 0:
+                dense_score[hit.chunk.id] = hit.score
+    ranked = sorted(
+        scores,
+        key=lambda cid: (
+            -scores[cid],
+            best_rank[cid],
+            -dense_score.get(cid, float("-inf")),
+            cid,
+        ),
+    )[:k]
     return [
         SearchHit(chunk=chunks[cid], score=scores[cid], rank=rank + 1)
         for rank, cid in enumerate(ranked)
