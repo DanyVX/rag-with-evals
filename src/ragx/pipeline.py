@@ -41,6 +41,23 @@ def answer_with_context(
     prior_completion_tokens: int = 0,
     prior_cost_usd: float = 0.0,
 ) -> AskResult:
+    if not hits:
+        answer = ABSTENTION
+        citations = validate_citations(answer, 0)
+        return AskResult(
+            answer=answer,
+            citations=citations,
+            retrieved=[],
+            preprocess_ms=preprocess_ms,
+            retrieval_ms=retrieval_ms,
+            rerank_ms=rerank_ms,
+            generation_ms=0.0,
+            prompt_tokens=prior_prompt_tokens,
+            completion_tokens=prior_completion_tokens,
+            cost_usd=prior_cost_usd,
+            abstained=True,
+        )
+
     prompt = build_prompt(question, hits)
     generated_at = perf_counter()
     answer = provider.generate(prompt, temperature=0.0, seed=0).strip()
