@@ -30,11 +30,10 @@ def main() -> None:
         "human_corrected_question",
         "human_gold_answer",
         "human_gold_chunk_ids",
+        "human_answer_score_0_4",
         "ambiguous",
         "reviewer_notes",
         "first_review_date",
-        "rereview_date",
-        "rereview_agrees",
     ]
     with args.output.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
