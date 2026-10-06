@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from scripts.run_retrieval_experiments import build_summary, canonical_configs
+from run_retrieval_experiments import build_summary, canonical_configs
 
 
 def main() -> None:
