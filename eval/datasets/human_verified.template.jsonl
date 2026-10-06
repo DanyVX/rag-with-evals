@@ -1,0 +1,1 @@
+{"id":"human-001","question":"REPLACE WITH A MANUALLY VERIFIED QUESTION","question_type":"single_hop","answerable":true,"split":"human_verified","gold_chunk_ids":[],"gold_answer":null,"ambiguous":false,"notes":"Template only. Do not count as verified until manually reviewed."}
