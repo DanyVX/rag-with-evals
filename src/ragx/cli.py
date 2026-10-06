@@ -5,7 +5,7 @@ from pathlib import Path
 
 import typer
 
-from ragx.chunk.core import Chunk, ChunkConfig, chunk_document
+from ragx.chunk.core import Chunk, ChunkConfig
 from ragx.chunk.tokenizer import HuggingFaceTokenCodec
 from ragx.config import get_settings
 from ragx.cost import BudgetExceededError
