@@ -9,6 +9,7 @@ from ragx.chunk.core import Chunk, ChunkConfig, chunk_document
 from ragx.chunk.tokenizer import HuggingFaceTokenCodec
 from ragx.config import get_settings
 from ragx.cost import BudgetExceededError
+from ragx.embed.cache import CachedEmbedder, EmbeddingCache
 from ragx.embed.sentence_transformer import SentenceTransformerEmbedder
 from ragx.eval.dataset import dataset_checksum, load_jsonl, validate_human_subset
 from ragx.index.bm25 import BM25Index
@@ -40,6 +41,8 @@ def doctor() -> None:
                 "provider": settings.provider,
                 "model": settings.model,
                 "embedding_model": settings.embedding_model,
+                "embedding_cache_path": str(settings.embedding_cache_path),
+                "embedding_preprocess_version": settings.embedding_preprocess_version,
                 "retriever": settings.retriever,
                 "top_k": settings.top_k,
                 "chunks_path": str(settings.chunks_path),
@@ -101,10 +104,16 @@ def index(
     chunks_path: Path = typer.Argument(..., exists=True, dir_okay=False),
     index_dir: Path = typer.Option(Path("data/index")),
     model: str = typer.Option("BAAI/bge-small-en-v1.5"),
+    cache_path: Path = typer.Option(Path("cache/embeddings.sqlite3")),
+    preprocess_version: str = typer.Option("v1"),
 ) -> None:
     """Build a persistent dense index from chunk JSONL."""
     chunks = _load_chunks(chunks_path)
-    embedder = SentenceTransformerEmbedder(model)
+    embedder = CachedEmbedder(
+        SentenceTransformerEmbedder(model),
+        EmbeddingCache(cache_path),
+        preprocess_version=preprocess_version,
+    )
     vectors = embedder.encode([chunk.text for chunk in chunks])
     store = FaissSQLiteStore(index_dir, model)
     if store.size():
@@ -120,10 +129,16 @@ def search(
     index_dir: Path = typer.Option(Path("data/index"), exists=True),
     model: str = typer.Option("BAAI/bge-small-en-v1.5"),
     top_k: int = typer.Option(5),
+    cache_path: Path = typer.Option(Path("cache/embeddings.sqlite3")),
+    preprocess_version: str = typer.Option("v1"),
 ) -> None:
     """Retrieve evidence using dense + BM25 hybrid RRF without generation."""
     chunks = _load_chunks(chunks_path)
-    embedder = SentenceTransformerEmbedder(model)
+    embedder = CachedEmbedder(
+        SentenceTransformerEmbedder(model),
+        EmbeddingCache(cache_path),
+        preprocess_version=preprocess_version,
+    )
     store = FaissSQLiteStore(index_dir, model)
     bm25 = BM25Index(chunks)
     dense = dense_search(question, embedder=embedder, store=store, k=max(top_k, 20))
