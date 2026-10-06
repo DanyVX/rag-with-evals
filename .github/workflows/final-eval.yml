@@ -1,0 +1,102 @@
+name: final-eval
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      PYTHONHASHSEED: "17"
+      TOKENIZERS_PARALLELISM: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project and local evaluation models
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install sentencepiece
+
+      - name: Require human-verified inputs
+        run: |
+          test -f eval/datasets/human_verified.jsonl
+          test -f eval/review/human_judge_labels.jsonl
+
+      - name: Download pinned corpora and record checksums
+        run: python scripts/download_corpus.py
+
+      - name: Rebuild deterministic Python chunks
+        run: |
+          ragx ingest data/raw/python-3.11.17-docs-html \
+            --output data/processed/python_chunks.jsonl \
+            --strategy fixed \
+            --size 256 \
+            --overlap 32
+
+      - name: Regenerate synthetic comparison set
+        run: |
+          python scripts/build_eval_seed.py data/processed/python_chunks.jsonl \
+            --output eval/datasets/synthetic.generated.jsonl \
+            --answerable 100 \
+            --multihop 20 \
+            --unanswerable 30
+
+      - name: Run synthetic retrieval baseline with confidence intervals
+        run: |
+          python scripts/run_baseline_eval.py \
+            data/processed/python_chunks.jsonl \
+            eval/datasets/synthetic.generated.jsonl \
+            --output results/bootstrap/retrieval_baseline.json
+
+      - name: Validate independent judge against human labels
+        run: |
+          python scripts/run_judge_validation.py \
+            eval/review/human_judge_labels.jsonl \
+            data/processed/python_chunks.jsonl \
+            --output results/final/judge_validation.json
+
+      - name: Run final human-gold retrieval and generation evaluation
+        run: |
+          python scripts/run_final_generation_eval.py \
+            data/processed/python_chunks.jsonl \
+            eval/datasets/human_verified.jsonl \
+            --synthetic-baseline results/bootstrap/retrieval_baseline.json \
+            --output results/final/metrics.json \
+            --failures results/final/failure_cases.json
+
+      - name: Run final prompt-injection benchmark
+        run: |
+          python scripts/run_injection_eval.py \
+            --output results/final/injection_eval.json
+
+      - name: Render observed failure analysis
+        run: python scripts/render_failure_analysis.py
+
+      - name: Score rereview if completed file is present
+        if: hashFiles('eval/review/rereview_30.csv') != ''
+        run: |
+          python scripts/score_rereview.py eval/review/rereview_30.csv
+
+      - name: Upload final evaluation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ragx-final-eval
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            corpus/checksums.json
+            eval/datasets/synthetic.generated.jsonl
+            results/bootstrap/retrieval_baseline.json
+            results/final/**
+            results/human/**
