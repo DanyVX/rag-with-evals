@@ -143,6 +143,8 @@ def search(
         preprocess_version=preprocess_version,
     )
     store = FaissSQLiteStore(index_dir, model)
+    if not store.matches_chunks(chunks):
+        raise typer.BadParameter("dense index is stale relative to the chunk file; rebuild it")
     bm25 = BM25Index(chunks)
     dense = dense_search(question, embedder=embedder, store=store, k=max(top_k, 20))
     sparse = sparse_search(question, index=bm25, k=max(top_k, 20))
