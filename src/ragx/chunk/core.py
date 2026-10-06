@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import re
 from hashlib import sha256
-from typing import Callable, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from ragx.chunk.tokenizer import TokenCodec, WhitespaceTokenCodec
 from ragx.ingest.models import Document
-
-Tokenizer = Callable[[str], list[str]]
 
 
 class ChunkConfig(BaseModel):
@@ -26,10 +25,7 @@ class Chunk(BaseModel):
     position: int
     page: int | None = None
     section: str | None = None
-
-
-def whitespace_tokenizer(text: str) -> list[str]:
-    return re.findall(r"\S+", text)
+    token_count: int | None = None
 
 
 def _stable_id(doc_hash: str, position: int, text: str) -> str:
@@ -37,64 +33,176 @@ def _stable_id(doc_hash: str, position: int, text: str) -> str:
     return sha256(raw.encode()).hexdigest()[:24]
 
 
-def _fixed(text: str, size: int, overlap: int, tokenize: Tokenizer) -> list[str]:
-    tokens = tokenize(text)
+def _fixed(text: str, size: int, overlap: int, codec: TokenCodec) -> list[str]:
+    tokens = codec.encode(text)
     if overlap >= size:
         raise ValueError("overlap must be smaller than chunk size")
+    if not tokens:
+        return []
     step = size - overlap
-    return [" ".join(tokens[i : i + size]) for i in range(0, len(tokens), step)]
+    return [
+        codec.decode(tokens[i : i + size]).strip()
+        for i in range(0, len(tokens), step)
+        if tokens[i : i + size]
+    ]
 
 
 def _sentences(text: str) -> list[str]:
-    return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+    return [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+|\n{2,}", text)
+        if sentence.strip()
+    ]
 
 
-def _sentence_window(text: str, size: int, tokenize: Tokenizer) -> list[str]:
-    chunks: list[str] = []
-    buf: list[str] = []
-    count = 0
-    for sentence in _sentences(text):
-        n = len(tokenize(sentence))
-        if buf and count + n > size:
-            chunks.append(" ".join(buf))
-            buf, count = [], 0
-        buf.append(sentence)
-        count += n
-    if buf:
-        chunks.append(" ".join(buf))
-    return chunks
+def _logical_blocks(text: str) -> list[str]:
+    """Split paragraphs while keeping fenced code blocks and table rows together."""
+    blocks: list[str] = []
+    current: list[str] = []
+    in_fence = False
+    fence_marker = ""
+    backtick_fence = chr(96) * 3
 
+    def flush() -> None:
+        if current:
+            block = "\n".join(current).strip()
+            if block:
+                blocks.append(block)
+            current.clear()
 
-def _recursive(text: str, size: int, tokenize: Tokenizer) -> list[str]:
-    blocks = re.split(r"\n{2,}", text)
-    out: list[str] = []
-    for block in blocks:
-        if len(tokenize(block)) <= size:
-            if block.strip():
-                out.append(block.strip())
-        else:
-            out.extend(_sentence_window(block, size, tokenize))
-    return out
-
-
-def _structure(text: str, size: int, tokenize: Tokenizer) -> list[tuple[str | None, str]]:
-    current: str | None = None
-    sections: list[tuple[str | None, list[str]]] = []
-    body: list[str] = []
     for line in text.splitlines():
-        if re.match(r"^#{1,6}\s+", line):
-            if body:
-                sections.append((current, body))
-                body = []
-            current = re.sub(r"^#{1,6}\s+", "", line).strip()
+        stripped = line.strip()
+        if not in_fence and (
+            stripped.startswith(backtick_fence) or stripped.startswith("~~~")
+        ):
+            flush()
+            in_fence = True
+            fence_marker = stripped[:3]
+            current.append(line)
+            continue
+        if in_fence:
+            current.append(line)
+            if stripped.startswith(fence_marker):
+                in_fence = False
+                flush()
+            continue
+        if not stripped:
+            flush()
+            continue
+        current.append(line)
+
+    flush()
+    return blocks
+
+
+def _suffix(text: str, overlap: int, codec: TokenCodec) -> str:
+    if overlap <= 0:
+        return ""
+    tokens = codec.encode(text)
+    return codec.decode(tokens[-overlap:]).strip()
+
+
+def _pack_blocks(
+    blocks: list[str],
+    *,
+    size: int,
+    overlap: int,
+    codec: TokenCodec,
+    separator: str,
+) -> list[str]:
+    if overlap >= size:
+        raise ValueError("overlap must be smaller than chunk size")
+    output: list[str] = []
+    current: list[str] = []
+
+    def rendered(parts: list[str]) -> str:
+        return separator.join(part for part in parts if part).strip()
+
+    def flush() -> None:
+        text = rendered(current)
+        if text:
+            output.append(text)
+        current.clear()
+
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+        block_count = len(codec.encode(block))
+        if block_count > size:
+            flush()
+            segments = _fixed(block, size, overlap, codec)
+            output.extend(segment for segment in segments if segment)
+            continue
+
+        candidate = rendered(current + [block])
+        if current and len(codec.encode(candidate)) > size:
+            previous = rendered(current)
+            flush()
+            carry = _suffix(previous, overlap, codec)
+            if carry:
+                with_carry = rendered([carry, block])
+                if len(codec.encode(with_carry)) <= size:
+                    current.extend([carry, block])
+                    continue
+            current.append(block)
+        else:
+            current.append(block)
+
+    flush()
+    return output
+
+
+def _sentence_window(text: str, size: int, overlap: int, codec: TokenCodec) -> list[str]:
+    return _pack_blocks(
+        _sentences(text),
+        size=size,
+        overlap=overlap,
+        codec=codec,
+        separator=" ",
+    )
+
+
+def _recursive(text: str, size: int, overlap: int, codec: TokenCodec) -> list[str]:
+    return _pack_blocks(
+        _logical_blocks(text),
+        size=size,
+        overlap=overlap,
+        codec=codec,
+        separator="\n\n",
+    )
+
+
+def _structure(
+    text: str,
+    size: int,
+    overlap: int,
+    codec: TokenCodec,
+) -> list[tuple[str | None, str]]:
+    current_heading: str | None = None
+    body: list[str] = []
+    sections: list[tuple[str | None, str]] = []
+
+    def flush_section() -> None:
+        nonlocal body
+        section_text = "\n".join(body).strip()
+        if section_text:
+            sections.append((current_heading, section_text))
+        body = []
+
+    for line in text.splitlines():
+        heading_match = re.match(r"^#{1,6}\s+(.+)$", line.strip())
+        if heading_match:
+            flush_section()
+            current_heading = heading_match.group(1).strip()
         else:
             body.append(line)
-    if body:
-        sections.append((current, body))
+    flush_section()
+
     result: list[tuple[str | None, str]] = []
-    for heading, lines in sections:
-        for part in _recursive("\n".join(lines), size, tokenize):
-            result.append((heading, part))
+    for heading, section_text in sections:
+        parts = _recursive(section_text, size, overlap, codec)
+        result.extend((heading, part) for part in parts)
     return result
 
 
@@ -102,34 +210,61 @@ def chunk_document(
     document: Document,
     config: ChunkConfig,
     *,
-    tokenize: Tokenizer = whitespace_tokenizer,
+    codec: TokenCodec | None = None,
 ) -> list[Chunk]:
     if not document.text.strip():
         return []
-    if config.strategy == "fixed":
-        raw = [(None, x) for x in _fixed(document.text, config.size, config.overlap, tokenize)]
-    elif config.strategy == "recursive":
-        raw = [(None, x) for x in _recursive(document.text, config.size, tokenize)]
-    elif config.strategy == "sentence":
-        raw = [(None, x) for x in _sentence_window(document.text, config.size, tokenize)]
-    else:
-        raw = _structure(document.text, config.size, tokenize)
 
-    chunks: list[Chunk] = []
-    for pos, (section, text) in enumerate(raw):
+    codec = codec or WhitespaceTokenCodec()
+    size = min(config.size, codec.max_sequence_length)
+    if config.overlap >= size:
+        raise ValueError(
+            f"overlap ({config.overlap}) must be smaller than effective chunk size ({size})"
+        )
+
+    if config.strategy == "fixed":
+        raw = [(None, part) for part in _fixed(document.text, size, config.overlap, codec)]
+    elif config.strategy == "recursive":
+        raw = [
+            (None, part)
+            for part in _recursive(document.text, size, config.overlap, codec)
+        ]
+    elif config.strategy == "sentence":
+        raw = [
+            (None, part)
+            for part in _sentence_window(document.text, size, config.overlap, codec)
+        ]
+    else:
+        raw = _structure(document.text, size, config.overlap, codec)
+
+    rendered_parts: list[tuple[str | None, str]] = []
+    for section, text in raw:
         text = text.strip()
         if not text:
             continue
         rendered = f"{section}\n\n{text}" if config.prepend_section and section else text
+        if len(codec.encode(rendered)) <= codec.max_sequence_length:
+            rendered_parts.append((section, rendered))
+            continue
+        for split in _fixed(rendered, codec.max_sequence_length, 0, codec):
+            if split:
+                rendered_parts.append((section, split))
+
+    chunks: list[Chunk] = []
+    for position, (section, text) in enumerate(rendered_parts):
+        count = len(codec.encode(text))
+        if count > codec.max_sequence_length:
+            raise RuntimeError("chunk exceeds tokenizer max sequence length")
         chunks.append(
             Chunk(
-                id=_stable_id(document.doc_hash, pos, rendered),
+                id=_stable_id(document.doc_hash, position, text),
                 doc_hash=document.doc_hash,
                 source=document.source,
-                text=rendered,
-                position=pos,
+                text=text,
+                position=position,
                 page=document.page,
                 section=section,
+                token_count=count,
             )
         )
     return chunks
