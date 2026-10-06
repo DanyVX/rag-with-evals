@@ -45,7 +45,7 @@ These are deliberately not marked complete until real evidence exists.
 - [ ] Build the synthetic and unanswerable evaluation sets.
 - [ ] Manually verify at least 100 gold questions.
 - [ ] Re-review 30 of those questions at least one week later and record consistency.
-- [ ] Run the complete controlled experiment grid or a documented compute-budget subset.
+- [ ] Run the complete controlled experiment grid and archive the compact 5,184-config evidence table.
 - [ ] Validate the LLM judge against human labels and report agreement / Cohen's kappa.
 - [ ] Publish headline metrics with confidence intervals and sample counts.
 - [ ] Publish injection attack success rate.
