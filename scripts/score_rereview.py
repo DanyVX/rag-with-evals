@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+from datetime import date
 from pathlib import Path
 
 from ragx.eval.judge import cohens_kappa
@@ -10,6 +11,13 @@ from ragx.eval.judge import cohens_kappa
 
 def normalize(value: str) -> str:
     return " ".join(value.lower().split())
+
+
+def parse_date(value: str, field: str, row_id: str) -> date:
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise ValueError(f"{field} must use YYYY-MM-DD for {row_id}") from exc
 
 
 def main() -> None:
@@ -31,6 +39,12 @@ def main() -> None:
         for row in csv.DictReader(handle):
             if not row["second_status"].strip():
                 continue
+            first_date = parse_date(row["first_review_date"], "first_review_date", row["id"])
+            second_date = parse_date(row["rereview_date"], "rereview_date", row["id"])
+            if (second_date - first_date).days < 7:
+                raise ValueError(
+                    f"re-review for {row['id']} occurred fewer than 7 days after first review"
+                )
             first_ok = row["first_status"].strip().upper() in {"APPROVED", "CORRECTED"}
             second_ok = row["second_status"].strip().upper() in {"APPROVED", "CORRECTED"}
             labels_a.append(int(first_ok))
@@ -48,6 +62,7 @@ def main() -> None:
         raise ValueError(f"30 completed re-reviews required; found {len(rows)}")
     result = {
         "n": len(rows),
+        "minimum_gap_days": 7,
         "status_kappa": cohens_kappa(labels_a, labels_b),
         "exact_answer_agreement": sum(answer_agreement) / len(answer_agreement),
         "gold_chunk_set_agreement": sum(chunk_agreement) / len(chunk_agreement),
