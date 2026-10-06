@@ -59,8 +59,9 @@ def main() -> None:
             question = row["human_corrected_question"].strip() or row["question"].strip()
             answer = row["human_gold_answer"].strip() or row["generated_answer"].strip()
             ids = split_ids(row["human_gold_chunk_ids"]) or split_ids(row["gold_chunk_ids"])
+            sources = split_ids(row["human_gold_sources"]) or split_ids(row["gold_sources"])
             answerable = row["question_type"] != "unanswerable"
-            if not question or not answer or (answerable and not ids):
+            if not question or not answer or (answerable and not (ids or sources)):
                 raise ValueError(f"incomplete approved row: {row['id']}")
             items.append(
                 {
@@ -70,6 +71,7 @@ def main() -> None:
                     "answerable": answerable,
                     "split": "human_verified",
                     "gold_chunk_ids": ids,
+                    "gold_sources": sources,
                     "gold_answer": answer,
                     "ambiguous": row["ambiguous"].strip().lower() in {"1", "true", "yes"},
                     "notes": row["reviewer_notes"].strip() or None,
@@ -82,6 +84,7 @@ def main() -> None:
                     "reference_answer": answer,
                     "candidate_answer": row["generated_answer"].strip(),
                     "gold_chunk_ids": ids,
+                    "gold_sources": sources,
                     "human_score": human_score,
                     "first_review_date": reviewed_on.isoformat(),
                 }
