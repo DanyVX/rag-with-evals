@@ -1,0 +1,1 @@
+Project Aurora uses the codename BLUE_ORCHID for its stable release channel. The release channel is documented for deterministic integration testing.
