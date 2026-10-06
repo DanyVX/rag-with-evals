@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     embedding_model: str = Field(
         default="BAAI/bge-small-en-v1.5", alias="RAGX_EMBEDDING_MODEL"
     )
+    embedding_cache_path: Path = Field(
+        default=Path("cache/embeddings.sqlite3"), alias="RAGX_EMBEDDING_CACHE_PATH"
+    )
+    embedding_preprocess_version: str = Field(
+        default="v1", alias="RAGX_EMBEDDING_PREPROCESS_VERSION"
+    )
     retriever: str = Field(default="hybrid", alias="RAGX_RETRIEVER")
     retrieve_top_n: int = Field(default=20, alias="RAGX_RETRIEVE_TOP_N")
     top_k: int = Field(default=5, alias="RAGX_TOP_K")
