@@ -58,11 +58,11 @@ def test_sentence_overlap_is_applied_without_exceeding_limit() -> None:
     doc = _doc(
         "Alpha beta gamma. Delta epsilon zeta. Eta theta iota. Kappa lambda mu."
     )
-    codec = WhitespaceTokenCodec(max_sequence_length=6)
+    codec = WhitespaceTokenCodec(max_sequence_length=8)
     chunks = chunk_document(
         doc,
-        ChunkConfig(strategy="sentence", size=6, overlap=2),
+        ChunkConfig(strategy="sentence", size=8, overlap=2),
         codec=codec,
     )
     assert len(chunks) >= 2
-    assert all(len(codec.encode(chunk.text)) <= 6 for chunk in chunks)
+    assert all(len(codec.encode(chunk.text)) <= 8 for chunk in chunks)
