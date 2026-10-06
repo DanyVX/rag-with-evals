@@ -38,12 +38,13 @@ class CostTracker:
             raise ValueError("cost values cannot be negative")
         with self._lock:
             released = min(reserved_usd, self.reserved_usd)
-            projected = self.spent_usd + actual_cost_usd
-            if projected > self.max_spend_usd:
+            other_reservations = self.reserved_usd - released
+            projected_total = self.spent_usd + actual_cost_usd + other_reservations
+            if projected_total > self.max_spend_usd:
                 self.reserved_usd -= released
                 raise BudgetExceededError("Actual provider cost exceeded configured budget")
             self.reserved_usd -= released
-            self.spent_usd = projected
+            self.spent_usd += actual_cost_usd
 
     def cancel_reservation(self, reserved_usd: float) -> None:
         if reserved_usd < 0:
