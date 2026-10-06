@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.env
+data/raw/
+data/processed/
+cache/
+results/runs/
+*.sqlite3
+*.faiss
