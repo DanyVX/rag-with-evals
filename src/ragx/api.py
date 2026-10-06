@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
-from pydantic import BaseModel
+from functools import lru_cache
 
-from ragx.generate.providers import MockProvider
-from ragx.index.base import SearchHit
-from ragx.pipeline import answer_with_context
+import httpx
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+
+from ragx.config import get_settings
+from ragx.cost import BudgetExceededError
+from ragx.runtime import RAGRuntime
 
 app = FastAPI(title="rag-with-evals", version="0.1.0")
 
 
 class AskRequest(BaseModel):
-    question: str
+    question: str = Field(min_length=1)
 
 
 class RetrievedChunk(BaseModel):
@@ -20,42 +23,81 @@ class RetrievedChunk(BaseModel):
     source: str
     score: float
     rank: int
+    page: int | None = None
+    section: str | None = None
+
+
+class UsageResponse(BaseModel):
+    prompt_tokens: int
+    completion_tokens: int
+    cost_usd: float
 
 
 class AskResponse(BaseModel):
     answer: str
+    citations: list[int]
+    invalid_citations: list[int]
     citations_valid: bool
     abstained: bool
     retrieved_chunks: list[RetrievedChunk]
     timing_ms: dict[str, float]
+    usage: UsageResponse
 
 
-def _retrieve(question: str) -> list[SearchHit]:
-    """Dependency seam replaced by configured retrieval in production."""
-    del question
-    return []
+@lru_cache(maxsize=1)
+def get_runtime() -> RAGRuntime:
+    return RAGRuntime(get_settings())
+
+
+@app.get("/health")
+def health() -> dict[str, object]:
+    try:
+        return {"status": "ok", **get_runtime().status()}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/ask", response_model=AskResponse)
 def ask(request: AskRequest) -> AskResponse:
-    hits = _retrieve(request.question)
-    result = answer_with_context(request.question, hits, provider=MockProvider())
+    try:
+        result = get_runtime().ask(request.question)
+    except BudgetExceededError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"provider returned HTTP {exc.response.status_code}",
+        ) from exc
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
     return AskResponse(
         answer=result.answer,
+        citations=result.citations.cited,
+        invalid_citations=result.citations.invalid,
         citations_valid=result.citations.valid,
         abstained=result.abstained,
         retrieved_chunks=[
             RetrievedChunk(
-                id=h.chunk.id,
-                text=h.chunk.text,
-                source=h.chunk.source,
-                score=h.score,
-                rank=h.rank,
+                id=hit.chunk.id,
+                text=hit.chunk.text,
+                source=hit.chunk.source,
+                score=hit.score,
+                rank=hit.rank,
+                page=hit.chunk.page,
+                section=hit.chunk.section,
             )
-            for h in hits
+            for hit in result.retrieved
         ],
         timing_ms={
             "retrieval": result.retrieval_ms,
+            "rerank": result.rerank_ms,
             "generation": result.generation_ms,
+            "total": result.total_ms,
         },
+        usage=UsageResponse(
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            cost_usd=result.cost_usd,
+        ),
     )
