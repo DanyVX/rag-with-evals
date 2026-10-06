@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   evaluate:
@@ -83,10 +83,31 @@ jobs:
       - name: Render observed failure analysis
         run: python scripts/render_failure_analysis.py
 
+      - name: Publish headline results into README
+        run: python scripts/update_readme_results.py
+
       - name: Score rereview if completed file is present
         if: hashFiles('eval/review/rereview_30.csv') != ''
         run: |
           python scripts/score_rereview.py eval/review/rereview_30.csv
+
+      - name: Commit versioned evaluation evidence
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md corpus/checksums.json \
+            eval/datasets/synthetic.generated.jsonl \
+            results/bootstrap/retrieval_baseline.json \
+            results/final
+          if [ -f results/human/rereview_consistency.json ]; then
+            git add results/human/rereview_consistency.json
+          fi
+          if git diff --cached --quiet; then
+            echo "No evaluation evidence changed"
+          else
+            git commit -m "eval: publish final empirical results"
+            git push origin HEAD:main
+          fi
 
       - name: Upload final evaluation artifact
         uses: actions/upload-artifact@v4
