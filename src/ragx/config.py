@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     max_spend_usd: float = Field(default=0.0, alias="RAGX_MAX_SPEND_USD")
 
     provider: str = Field(default="mock", alias="RAGX_PROVIDER")
+    allow_mock_api: bool = Field(default=False, alias="RAGX_ALLOW_MOCK_API")
     model: str = Field(default="mock", alias="RAGX_MODEL")
     provider_input_usd_per_million: float = Field(
         default=0.0, alias="RAGX_INPUT_USD_PER_MILLION"
