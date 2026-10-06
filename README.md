@@ -38,6 +38,8 @@ uv run pytest
 
 The default configuration is offline and uses no provider credentials. Provider calls remain blocked until a nonzero spend cap and an explicit provider are configured.
 
+For the complete offline workflow and evaluation dataset format, see [docs/REPRODUCING.md](docs/REPRODUCING.md).
+
 ## Design decisions
 
 The initial local index is deliberately CPU-first and file-backed; Docker is not available in the discovered environment. See [docs/DESIGN.md](docs/DESIGN.md) for the full decision log and [docs/LIMITATIONS.md](docs/LIMITATIONS.md) for current limits.

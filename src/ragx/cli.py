@@ -5,6 +5,7 @@ from pathlib import Path
 import typer
 
 from ragx.eval.report import write_result
+from ragx.eval.runner import evaluate
 from ragx.eval.stats import bootstrap_mean_ci
 from ragx.ingest.service import ingest_paths
 from ragx.pipeline import answer, build_index, load_index
@@ -60,3 +61,25 @@ def ask(query: str, index_path: Path = Path("cache/index.json"), top_k: int = 3)
     for number, hit in enumerate(hits, start=1):
         source = hit.chunk.metadata.get("title", hit.chunk.document_hash)
         typer.echo(f"[{number}] {source} score={hit.score:.3f}")
+
+
+@app.command(name="eval")
+def evaluate_retrieval(
+    dataset: Path,
+    index_path: Path = Path("cache/index.json"),
+    output: Path = Path("results/evaluation.json"),
+    k: int = 5,
+) -> None:
+    """Evaluate a persisted index against a versioned JSONL dataset."""
+    metrics = evaluate(index_path, dataset, k=k)
+    write_result(output, metrics, Path.cwd())
+    typer.echo(f"Wrote {output}")
+
+
+@app.command()
+def report(result: Path = Path("results/evaluation.json")) -> None:
+    """Render a saved result artifact without changing any measurement."""
+    import json
+
+    payload = json.loads(result.read_text(encoding="utf-8"))
+    typer.echo(json.dumps(payload["metrics"], indent=2))
