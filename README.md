@@ -91,7 +91,7 @@ Controlled experiment dimensions are in `eval/experiments/grid.json`.
 uvicorn ragx.api:app --reload
 ```
 
-`POST /ask` returns the answer, citation validity, abstention state, retrieved chunks, scores, and timing fields. The thin API intentionally exposes a retrieval dependency seam so deployments can configure the persisted index/provider without coupling the API to one environment.
+`POST /ask` uses the configured persisted FAISS/SQLite index plus BM25 (dense, sparse, or hybrid RRF), optional cross-encoder reranking, and the configured provider. It returns numbered citations, citation validation, abstention state, retrieved chunks with scores, retrieval/rerank/generation timing, token usage, and per-query cost. `GET /health` reports index/provider/budget state and fails clearly when runtime configuration is incomplete.
 
 ## Providers and cost safety
 
@@ -103,7 +103,9 @@ Real provider calls are disabled while:
 RAGX_MAX_SPEND_USD=0
 ```
 
-Set a positive explicit cap before enabling remote calls.
+Set a positive explicit cap before enabling paid remote calls. Paid providers also require explicit `RAGX_INPUT_USD_PER_MILLION` and `RAGX_OUTPUT_USD_PER_MILLION` values so the runtime can reserve a conservative maximum cost before each request and reconcile it against provider-reported usage. Local OpenAI-compatible endpoints on localhost may run at zero monetary cost.
+
+Key runtime variables include `RAGX_PROVIDER`, `RAGX_MODEL`, `RAGX_CHUNKS_PATH`, `RAGX_INDEX_DIR`, `RAGX_EMBEDDING_MODEL`, `RAGX_RETRIEVER`, `RAGX_TOP_K`, and optional `RAGX_RERANKER_MODEL`. Mock generation is disabled for the API unless `RAGX_ALLOW_MOCK_API=true` is explicitly set.
 
 Adapters included:
 - Anthropic API
@@ -117,6 +119,12 @@ pytest
 ```
 
 CI uses deterministic mocked/local behavior. Real-LLM benchmark runs are manual by design.
+
+## Published evaluation results
+
+<!-- RAGX_RESULTS_START -->
+Final human-verified results have not been published yet. The release gate will keep v0.1.0 blocked until the required empirical evidence exists.
+<!-- RAGX_RESULTS_END -->
 
 ## Project status
 
