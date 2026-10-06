@@ -56,8 +56,12 @@ def _load_text(path: Path) -> Document:
 
 def _load_html(path: Path) -> Document:
     raw = path.read_text(encoding="utf-8", errors="replace")
+    soup = BeautifulSoup(raw, "html.parser")
+    for tag in soup(["script", "style", "nav", "footer", "noscript"]):
+        tag.decompose()
+    sanitized_html = str(soup)
     extracted = trafilatura.extract(
-        raw,
+        sanitized_html,
         include_comments=False,
         include_tables=True,
         include_formatting=True,
@@ -66,9 +70,6 @@ def _load_html(path: Path) -> Document:
     warnings: list[str] = []
     if not extracted:
         warnings.append("trafilatura_fallback")
-        soup = BeautifulSoup(raw, "html.parser")
-        for tag in soup(["script", "style", "nav", "footer", "noscript"]):
-            tag.decompose()
         extracted = soup.get_text("\n")
     cleaned = clean_text(extracted or "")
     language, quality = _quality_metadata(raw, cleaned)
@@ -133,7 +134,7 @@ def _repeated_page_furniture(page_texts: list[str]) -> set[str]:
     candidates: Counter[str] = Counter()
     for text in page_texts:
         lines = [line.strip() for line in text.splitlines() if line.strip()]
-        edge = lines[:2] + lines[-2:]
+        edge = lines[:1] + lines[-1:]
         for line in {_normalize_edge_line(item) for item in edge if item}:
             candidates[line] += 1
     threshold = max(2, math.ceil(len(page_texts) * 0.60))
@@ -146,9 +147,12 @@ def _strip_page_furniture(text: str, repeated: set[str]) -> tuple[str, bool]:
     lines = text.splitlines()
     keep = list(lines)
     changed = False
-    for index in list(range(min(2, len(lines)))) + list(
-        range(max(0, len(lines) - 2), len(lines))
-    ):
+    edge_indexes = []
+    if lines:
+        edge_indexes.append(0)
+    if len(lines) > 1:
+        edge_indexes.append(len(lines) - 1)
+    for index in edge_indexes:
         if 0 <= index < len(lines) and _normalize_edge_line(lines[index]) in repeated:
             keep[index] = ""
             changed = True
