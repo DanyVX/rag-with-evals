@@ -230,12 +230,10 @@ def main() -> None:
             }
 
         retrieval_row = {}
-        retrieval_mrr = None
         retrieval_recall5 = None
         if item["answerable"] and gold_sources:
             ranked_sources = unique([hit.chunk.source for hit in hits])
             metric = retrieval_metrics(ranked_sources, gold_sources, ks=KS)
-            retrieval_mrr = metric.mrr
             retrieval_recall5 = metric.recall_at_k[5]
             retrieval_row = {
                 "mrr": metric.mrr,
