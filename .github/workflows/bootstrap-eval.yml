@@ -11,7 +11,6 @@ on:
       - "scripts/run_baseline_eval.py"
       - "scripts/run_injection_eval.py"
       - "scripts/render_bootstrap_report.py"
-      - "src/ragx/**"
       - "pyproject.toml"
 
 permissions:
