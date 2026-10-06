@@ -1,0 +1,99 @@
+name: bootstrap-eval
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/bootstrap-eval.yml"
+      - "scripts/download_corpus.py"
+      - "scripts/build_eval_seed.py"
+      - "scripts/make_review_queue.py"
+      - "scripts/run_baseline_eval.py"
+      - "scripts/run_injection_eval.py"
+      - "scripts/render_bootstrap_report.py"
+      - "src/ragx/**"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PYTHONHASHSEED: "17"
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project and local-generation dependency
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install sentencepiece
+
+      - name: Download pinned corpora and record checksums
+        run: python scripts/download_corpus.py
+
+      - name: Process Python documentation corpus
+        run: |
+          ragx ingest data/raw/python-3.11.17-docs-html             --output data/processed/python_chunks.jsonl             --strategy fixed             --size 256             --overlap 32
+
+      - name: Process NIST PDF layout-stress corpus
+        run: |
+          mkdir -p data/raw/nist
+          cp data/raw/NIST.AI.100-1.pdf data/raw/nist/
+          ragx ingest data/raw/nist             --output data/processed/nist_chunks.jsonl             --strategy structure             --size 512             --overlap 0
+
+      - name: Generate synthetic and unanswerable candidate set locally
+        run: |
+          python scripts/build_eval_seed.py data/processed/python_chunks.jsonl             --output eval/datasets/synthetic.generated.jsonl             --answerable 100             --multihop 20             --unanswerable 30
+
+      - name: Build human-review queue
+        run: |
+          python scripts/make_review_queue.py eval/datasets/synthetic.generated.jsonl             --output eval/review/human_review_queue.csv             --limit 120
+
+      - name: Run retrieval baselines with confidence intervals
+        run: |
+          python scripts/run_baseline_eval.py             data/processed/python_chunks.jsonl             eval/datasets/synthetic.generated.jsonl             --output results/bootstrap/retrieval_baseline.json
+
+      - name: Run prompt-injection benchmark
+        run: |
+          python scripts/run_injection_eval.py             --output results/bootstrap/injection_eval.json
+
+      - name: Render bootstrap report and plot
+        run: python scripts/render_bootstrap_report.py
+
+      - name: Write run inventory
+        run: |
+          {
+            echo "# Bootstrap artifact inventory"
+            echo
+            echo "Python chunks: $(wc -l < data/processed/python_chunks.jsonl)"
+            echo "NIST chunks: $(wc -l < data/processed/nist_chunks.jsonl)"
+            echo "Evaluation items: $(wc -l < eval/datasets/synthetic.generated.jsonl)"
+            echo "Review queue rows: $(($(wc -l < eval/review/human_review_queue.csv) - 1))"
+            echo
+            cat corpus/checksums.json
+          } > results/bootstrap/RUN_INVENTORY.md
+          cat results/bootstrap/RUN_INVENTORY.md
+
+      - name: Upload reproducibility artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ragx-bootstrap-eval
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            corpus/checksums.json
+            data/processed/python_chunks.jsonl
+            data/processed/nist_chunks.jsonl
+            eval/datasets/synthetic.generated.jsonl
+            eval/review/human_review_queue.csv
+            results/bootstrap/**
