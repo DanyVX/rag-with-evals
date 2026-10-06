@@ -1,3 +1,4 @@
+from ragx.generate.anthropic_provider import AnthropicProvider
 from ragx.generate.citations import CitationValidation, validate_citations
 from ragx.generate.prompt import build_prompt
 from ragx.generate.providers import LLMProvider, MockProvider, OpenAICompatibleProvider
@@ -9,4 +10,5 @@ __all__ = [
     "LLMProvider",
     "MockProvider",
     "OpenAICompatibleProvider",
+    "AnthropicProvider",
 ]
