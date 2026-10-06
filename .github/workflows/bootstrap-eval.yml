@@ -13,6 +13,7 @@ jobs:
     env:
       PYTHONHASHSEED: "17"
       TOKENIZERS_PARALLELISM: "false"
+
     steps:
       - uses: actions/checkout@v4
 
@@ -32,29 +33,56 @@ jobs:
 
       - name: Process Python documentation corpus
         run: |
-          ragx ingest data/raw/python-3.11.17-docs-html             --output data/processed/python_chunks.jsonl             --strategy fixed             --size 256             --overlap 32
+          ragx ingest data/raw/python-3.11.17-docs-html \
+            --output data/processed/python_chunks.jsonl \
+            --strategy fixed \
+            --size 256 \
+            --overlap 32
 
       - name: Process NIST PDF layout-stress corpus
         run: |
           mkdir -p data/raw/nist
           cp data/raw/NIST.AI.100-1.pdf data/raw/nist/
-          ragx ingest data/raw/nist             --output data/processed/nist_chunks.jsonl             --strategy structure             --size 512             --overlap 0
+          ragx ingest data/raw/nist \
+            --output data/processed/nist_chunks.jsonl \
+            --strategy structure \
+            --size 512 \
+            --overlap 0
 
-      - name: Generate synthetic and unanswerable candidate set locally
+      - name: Over-generate synthetic and unanswerable candidates locally
         run: |
-          python scripts/build_eval_seed.py data/processed/python_chunks.jsonl             --output eval/datasets/synthetic.generated.jsonl             --answerable 100             --multihop 20             --unanswerable 30
+          python scripts/build_eval_seed.py data/processed/python_chunks.jsonl \
+            --output eval/datasets/synthetic.raw.jsonl \
+            --answerable 160 \
+            --multihop 30 \
+            --unanswerable 40
+
+      - name: Reject malformed or weak synthetic candidates
+        run: |
+          python scripts/validate_synthetic_seed.py \
+            data/processed/python_chunks.jsonl \
+            eval/datasets/synthetic.raw.jsonl \
+            --output eval/datasets/synthetic.generated.jsonl \
+            --rejected eval/datasets/synthetic.rejected.jsonl \
+            --minimum 150
 
       - name: Build human-review queue
         run: |
-          python scripts/make_review_queue.py eval/datasets/synthetic.generated.jsonl             --output eval/review/human_review_queue.csv             --limit 120
+          python scripts/make_review_queue.py eval/datasets/synthetic.generated.jsonl \
+            --output eval/review/human_review_queue.csv \
+            --limit 120
 
       - name: Run retrieval baselines with confidence intervals
         run: |
-          python scripts/run_baseline_eval.py             data/processed/python_chunks.jsonl             eval/datasets/synthetic.generated.jsonl             --output results/bootstrap/retrieval_baseline.json
+          python scripts/run_baseline_eval.py \
+            data/processed/python_chunks.jsonl \
+            eval/datasets/synthetic.generated.jsonl \
+            --output results/bootstrap/retrieval_baseline.json
 
       - name: Run prompt-injection benchmark
         run: |
-          python scripts/run_injection_eval.py             --output results/bootstrap/injection_eval.json
+          python scripts/run_injection_eval.py \
+            --output results/bootstrap/injection_eval.json
 
       - name: Render bootstrap report and plot
         run: python scripts/render_bootstrap_report.py
@@ -66,7 +94,9 @@ jobs:
             echo
             echo "Python chunks: $(wc -l < data/processed/python_chunks.jsonl)"
             echo "NIST chunks: $(wc -l < data/processed/nist_chunks.jsonl)"
-            echo "Evaluation items: $(wc -l < eval/datasets/synthetic.generated.jsonl)"
+            echo "Raw generated items: $(wc -l < eval/datasets/synthetic.raw.jsonl)"
+            echo "Accepted evaluation items: $(wc -l < eval/datasets/synthetic.generated.jsonl)"
+            echo "Rejected evaluation items: $(wc -l < eval/datasets/synthetic.rejected.jsonl)"
             echo "Review queue rows: $(($(wc -l < eval/review/human_review_queue.csv) - 1))"
             echo
             cat corpus/checksums.json
@@ -83,6 +113,8 @@ jobs:
             corpus/checksums.json
             data/processed/python_chunks.jsonl
             data/processed/nist_chunks.jsonl
+            eval/datasets/synthetic.raw.jsonl
             eval/datasets/synthetic.generated.jsonl
+            eval/datasets/synthetic.rejected.jsonl
             eval/review/human_review_queue.csv
             results/bootstrap/**
