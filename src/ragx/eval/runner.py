@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ragx.eval.metrics import hit_at_k, recall_at_k, reciprocal_rank
+from ragx.eval.metrics import hit_at_k, ndcg_at_k, recall_at_k, reciprocal_rank
 from ragx.eval.stats import bootstrap_mean_ci
 from ragx.pipeline import load_index
 
@@ -13,7 +13,7 @@ from ragx.pipeline import load_index
 def evaluate(index_path: Path, dataset_path: Path, *, k: int = 5) -> dict[str, object]:
     """Evaluate retrieval against JSONL rows with question and gold_chunk_ids fields."""
     retriever = load_index(index_path)
-    values: dict[str, list[float]] = {"recall": [], "hit": [], "mrr": []}
+    values: dict[str, list[float]] = {"recall": [], "hit": [], "mrr": [], "ndcg": []}
     count = 0
     for line_number, line in enumerate(
         dataset_path.read_text(encoding="utf-8").splitlines(), start=1
@@ -30,6 +30,7 @@ def evaluate(index_path: Path, dataset_path: Path, *, k: int = 5) -> dict[str, o
         values["recall"].append(recall_at_k(retrieved, gold, k))
         values["hit"].append(hit_at_k(retrieved, gold, k))
         values["mrr"].append(reciprocal_rank(retrieved, gold))
+        values["ndcg"].append(ndcg_at_k(retrieved, gold, k))
         count += 1
     if not count:
         raise ValueError("Evaluation dataset contains no records")
