@@ -14,8 +14,7 @@ from ragx.embed.sentence_transformer import SentenceTransformerEmbedder
 from ragx.eval.dataset import dataset_checksum, load_jsonl, validate_human_subset
 from ragx.index.bm25 import BM25Index
 from ragx.index.faiss_sqlite import FaissSQLiteStore
-from ragx.ingest.dedupe import deduplicate
-from ragx.ingest.loaders import load_document
+from ragx.ingest.incremental import incremental_ingest_directory
 from ragx.retrieve.core import dense_search, hybrid_rrf, sparse_search
 from ragx.runtime import RAGRuntime
 
@@ -64,37 +63,41 @@ def ingest(
     size: int = typer.Option(256),
     overlap: int = typer.Option(32),
     tokenizer_model: str = typer.Option("BAAI/bge-small-en-v1.5"),
+    manifest: Path | None = typer.Option(None),
+    document_store: Path | None = typer.Option(None),
 ) -> None:
-    """Load, clean, deduplicate, and chunk using the embedding tokenizer."""
-    documents = []
-    for path in sorted(p for p in source.rglob("*") if p.is_file()):
-        try:
-            documents.extend(load_document(path))
-        except ValueError:
-            continue
-    documents, removed = deduplicate(documents)
+    """Incrementally load, clean, deduplicate, and chunk supported documents."""
     config = ChunkConfig(strategy=strategy, size=size, overlap=overlap)
     codec = HuggingFaceTokenCodec(tokenizer_model)
-    chunks = [
-        chunk
-        for doc in documents
-        for chunk in chunk_document(doc, config, codec=codec)
-    ]
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        "\n".join(chunk.model_dump_json() for chunk in chunks) + ("\n" if chunks else ""),
-        encoding="utf-8",
+    manifest_path = manifest or output.with_name(output.stem + ".manifest.json")
+    documents_path = document_store or output.with_name(output.stem + ".documents.jsonl")
+    result = incremental_ingest_directory(
+        source,
+        output_chunks=output,
+        document_store=documents_path,
+        manifest_path=manifest_path,
+        config=config,
+        codec=codec,
+        tokenizer_id=tokenizer_model,
     )
     typer.echo(
         json.dumps(
             {
-                "documents": len(documents),
-                "deduplicated": len(removed),
-                "chunks": len(chunks),
+                "files_seen": result.files_seen,
+                "changed_files": result.changed_files,
+                "deleted_files": result.deleted_files,
+                "documents": result.documents,
+                "deduplicated_documents": result.deduplicated_documents,
+                "chunks": result.chunks,
+                "reused_chunks": result.reused_chunks,
+                "rebuilt_chunks": result.rebuilt_chunks,
                 "tokenizer_model": tokenizer_model,
                 "tokenizer_max_sequence_length": codec.max_sequence_length,
                 "output": str(output),
-            }
+                "document_store": str(documents_path),
+                "manifest": str(manifest_path),
+            },
+            indent=2,
         )
     )
 
