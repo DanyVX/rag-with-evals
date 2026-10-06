@@ -7,6 +7,7 @@ import typer
 
 from ragx.chunk.core import Chunk, ChunkConfig, chunk_document
 from ragx.config import get_settings
+from ragx.cost import BudgetExceededError
 from ragx.embed.sentence_transformer import SentenceTransformerEmbedder
 from ragx.eval.dataset import dataset_checksum, load_jsonl, validate_human_subset
 from ragx.index.bm25 import BM25Index
@@ -14,6 +15,7 @@ from ragx.index.faiss_sqlite import FaissSQLiteStore
 from ragx.ingest.dedupe import deduplicate
 from ragx.ingest.loaders import load_document
 from ragx.retrieve.core import dense_search, hybrid_rrf, sparse_search
+from ragx.runtime import RAGRuntime
 
 app = typer.Typer(no_args_is_help=True, help="RAG with rigorous evaluation.")
 
@@ -30,9 +32,24 @@ def _load_chunks(path: Path) -> list[Chunk]:
 def doctor() -> None:
     """Validate local configuration without making provider calls."""
     settings = get_settings()
-    typer.echo(f"environment={settings.environment}")
-    typer.echo(f"max_spend_usd={settings.max_spend_usd:.2f}")
-    typer.echo("provider_calls_enabled=" + str(settings.max_spend_usd > 0).lower())
+    typer.echo(
+        json.dumps(
+            {
+                "environment": settings.environment,
+                "provider": settings.provider,
+                "model": settings.model,
+                "embedding_model": settings.embedding_model,
+                "retriever": settings.retriever,
+                "top_k": settings.top_k,
+                "chunks_path": str(settings.chunks_path),
+                "index_dir": str(settings.index_dir),
+                "max_spend_usd": settings.max_spend_usd,
+                "zero_cost_local_endpoint": settings.zero_cost_local_endpoint,
+                "mock_api_allowed": settings.allow_mock_api,
+            },
+            indent=2,
+        )
+    )
 
 
 @app.command()
@@ -88,14 +105,14 @@ def index(
 
 
 @app.command()
-def ask(
+def search(
     question: str = typer.Argument(...),
     chunks_path: Path = typer.Option(Path("data/processed/chunks.jsonl"), exists=True),
     index_dir: Path = typer.Option(Path("data/index"), exists=True),
     model: str = typer.Option("BAAI/bge-small-en-v1.5"),
     top_k: int = typer.Option(5),
 ) -> None:
-    """Retrieve evidence using dense + BM25 hybrid RRF."""
+    """Retrieve evidence using dense + BM25 hybrid RRF without generation."""
     chunks = _load_chunks(chunks_path)
     embedder = SentenceTransformerEmbedder(model)
     store = FaissSQLiteStore(index_dir, model)
@@ -115,6 +132,49 @@ def ask(
                 }
                 for hit in hits
             ],
+            indent=2,
+        )
+    )
+
+
+@app.command()
+def ask(question: str = typer.Argument(...)) -> None:
+    """Run the configured end-to-end RAG query."""
+    try:
+        runtime = RAGRuntime(get_settings())
+        result = runtime.ask(question)
+    except (RuntimeError, ValueError, BudgetExceededError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    typer.echo(
+        json.dumps(
+            {
+                "answer": result.answer,
+                "citations": result.citations.cited,
+                "invalid_citations": result.citations.invalid,
+                "abstained": result.abstained,
+                "retrieved": [
+                    {
+                        "rank": hit.rank,
+                        "score": hit.score,
+                        "chunk_id": hit.chunk.id,
+                        "source": hit.chunk.source,
+                    }
+                    for hit in result.retrieved
+                ],
+                "timing_ms": {
+                    "retrieval": result.retrieval_ms,
+                    "rerank": result.rerank_ms,
+                    "generation": result.generation_ms,
+                    "total": result.total_ms,
+                },
+                "usage": {
+                    "prompt_tokens": result.prompt_tokens,
+                    "completion_tokens": result.completion_tokens,
+                    "cost_usd": result.cost_usd,
+                },
+            },
             indent=2,
         )
     )
