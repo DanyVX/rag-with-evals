@@ -155,10 +155,7 @@ class CorpusCache:
         embedder = CachedEmbedder(
             base,
             self.embedding_cache,
-            preprocess_version=(
-                f"experiments-v1:{config['chunk_strategy']}:{size}:"
-                f"{overlap}:{int(bool(config['metadata_prepend']))}"
-            ),
+            preprocess_version="experiments-v1",
         )
         vectors = embedder.encode([chunk.text for chunk in chunks])
         store = InMemoryVectorStore(model_id)
