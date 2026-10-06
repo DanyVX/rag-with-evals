@@ -83,13 +83,13 @@ jobs:
       - name: Render observed failure analysis
         run: python scripts/render_failure_analysis.py
 
-      - name: Publish headline results into README
-        run: python scripts/update_readme_results.py
-
       - name: Score rereview if completed file is present
         if: hashFiles('eval/review/rereview_30.csv') != ''
         run: |
           python scripts/score_rereview.py eval/review/rereview_30.csv
+
+      - name: Publish headline results into README
+        run: python scripts/update_readme_results.py
 
       - name: Commit versioned evaluation evidence
         run: |
