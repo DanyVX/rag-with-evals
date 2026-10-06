@@ -6,6 +6,7 @@ from pathlib import Path
 import typer
 
 from ragx.chunk.core import Chunk, ChunkConfig, chunk_document
+from ragx.chunk.tokenizer import HuggingFaceTokenCodec
 from ragx.config import get_settings
 from ragx.cost import BudgetExceededError
 from ragx.embed.sentence_transformer import SentenceTransformerEmbedder
@@ -59,8 +60,9 @@ def ingest(
     strategy: str = typer.Option("fixed"),
     size: int = typer.Option(256),
     overlap: int = typer.Option(32),
+    tokenizer_model: str = typer.Option("BAAI/bge-small-en-v1.5"),
 ) -> None:
-    """Load, clean, deduplicate, and chunk a directory of supported documents."""
+    """Load, clean, deduplicate, and chunk using the embedding tokenizer."""
     documents = []
     for path in sorted(p for p in source.rglob("*") if p.is_file()):
         try:
@@ -69,7 +71,12 @@ def ingest(
             continue
     documents, removed = deduplicate(documents)
     config = ChunkConfig(strategy=strategy, size=size, overlap=overlap)
-    chunks = [chunk for doc in documents for chunk in chunk_document(doc, config)]
+    codec = HuggingFaceTokenCodec(tokenizer_model)
+    chunks = [
+        chunk
+        for doc in documents
+        for chunk in chunk_document(doc, config, codec=codec)
+    ]
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         "\n".join(chunk.model_dump_json() for chunk in chunks) + ("\n" if chunks else ""),
@@ -81,6 +88,8 @@ def ingest(
                 "documents": len(documents),
                 "deduplicated": len(removed),
                 "chunks": len(chunks),
+                "tokenizer_model": tokenizer_model,
+                "tokenizer_max_sequence_length": codec.max_sequence_length,
                 "output": str(output),
             }
         )
