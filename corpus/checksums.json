@@ -1,0 +1,10 @@
+{
+  "data/raw/NIST.AI.100-1.pdf": {
+    "sha256": "7576edb531d9848825814ee88e28b1795d3a84b435b4b797d3670eafdc4a89f1",
+    "url": "https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.100-1.pdf"
+  },
+  "data/raw/python-3.11.17-docs-html.tar.bz2": {
+    "sha256": "96a8faa62b35bde9d7740f901afaad7bd30be181dd15a3558e4ff6ec4fff3af6",
+    "url": "https://docs.python.org/3.11/archives/python-3.11.17-docs-html.tar.bz2"
+  }
+}
