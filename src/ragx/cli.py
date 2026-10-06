@@ -4,6 +4,7 @@ from pathlib import Path
 
 import typer
 
+from ragx.eval.experiments import ExperimentConfig, run_experiment
 from ragx.eval.report import write_result
 from ragx.eval.runner import evaluate
 from ragx.eval.stats import bootstrap_mean_ci
@@ -83,3 +84,12 @@ def report(result: Path = Path("results/evaluation.json")) -> None:
 
     payload = json.loads(result.read_text(encoding="utf-8"))
     typer.echo(json.dumps(payload["metrics"], indent=2))
+
+
+@app.command()
+def experiment(dataset: Path, index_path: Path = Path("cache/index.json"), k: int = 5) -> None:
+    """Run or resume a hash-addressed retrieval experiment."""
+    output, cached = run_experiment(
+        ExperimentConfig(str(index_path), str(dataset), k), Path("results")
+    )
+    typer.echo(f"{'Reused' if cached else 'Wrote'} {output}")
