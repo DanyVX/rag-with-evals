@@ -2,6 +2,16 @@ name: bootstrap-eval
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/bootstrap-eval.yml"
+      - "scripts/build_eval_seed.py"
+      - "scripts/validate_synthetic_seed.py"
+      - "scripts/make_review_queue.py"
+      - "scripts/run_baseline_eval.py"
+      - "scripts/run_injection_eval.py"
+      - "scripts/download_corpus.py"
+      - "pyproject.toml"
 
 permissions:
   contents: read
