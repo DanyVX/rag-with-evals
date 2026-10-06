@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from pathlib import Path
@@ -9,6 +10,11 @@ import numpy as np
 
 from ragx.chunk.core import Chunk
 from ragx.index.base import SearchHit
+
+
+def chunk_id_hash(chunk_ids: list[str]) -> str:
+    payload = "\n".join(sorted(chunk_ids)).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 class FaissSQLiteStore:
@@ -45,6 +51,26 @@ class FaissSQLiteStore:
                 raise ValueError("embedding model changed; refusing to mix indexes")
         if self.index_path.exists():
             self._index = faiss.read_index(str(self.index_path))
+            if self._index.ntotal != self.size():
+                raise RuntimeError(
+                    "FAISS vector count and SQLite metadata count differ; rebuild the index"
+                )
+
+    def _write_manifest(self) -> None:
+        dimension = int(self._index.d) if self._index is not None else 0
+        self.manifest_path.write_text(
+            json.dumps(
+                {
+                    "embedding_model_id": self.embedding_model_id,
+                    "dimension": dimension,
+                    "count": self.size(),
+                    "chunk_id_hash": self.chunk_id_hash(),
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
 
     def add(self, chunks: list[Chunk], vectors: np.ndarray) -> None:
         if len(chunks) != len(vectors):
@@ -67,17 +93,7 @@ class FaissSQLiteStore:
 
         self._index.add(vectors)
         faiss.write_index(self._index, str(self.index_path))
-        self.manifest_path.write_text(
-            json.dumps(
-                {
-                    "embedding_model_id": self.embedding_model_id,
-                    "dimension": int(vectors.shape[1]),
-                    "count": self.size(),
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
+        self._write_manifest()
 
     def search(self, query_vector: np.ndarray, k: int) -> list[SearchHit]:
         if self._index is None or self._index.ntotal == 0 or k <= 0:
@@ -106,3 +122,16 @@ class FaissSQLiteStore:
     def size(self) -> int:
         with self._connect() as conn:
             return int(conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0])
+
+    def chunk_ids(self) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT chunk_id FROM chunks ORDER BY row_id").fetchall()
+        return [str(row[0]) for row in rows]
+
+    def chunk_id_hash(self) -> str:
+        return chunk_id_hash(self.chunk_ids())
+
+    def matches_chunks(self, chunks: list[Chunk]) -> bool:
+        if len(chunks) != self.size():
+            return False
+        return self.chunk_id_hash() == chunk_id_hash([chunk.id for chunk in chunks])
