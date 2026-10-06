@@ -17,6 +17,7 @@ class EvalItem(BaseModel):
     answerable: bool
     split: Literal["synthetic", "human_verified"]
     gold_chunk_ids: list[str] = Field(default_factory=list)
+    gold_sources: list[str] = Field(default_factory=list)
     gold_answer: str | None = None
     ambiguous: bool = False
     notes: str | None = None
@@ -42,6 +43,11 @@ def validate_human_subset(items: list[EvalItem]) -> None:
     verified = [x for x in items if x.split == "human_verified"]
     if len(verified) < 100:
         raise ValueError(f"human-verified subset requires >=100 items; found {len(verified)}")
-    missing = [x.id for x in verified if not x.gold_answer or (x.answerable and not x.gold_chunk_ids)]
+    missing = [
+        x.id
+        for x in verified
+        if not x.gold_answer
+        or (x.answerable and not (x.gold_chunk_ids or x.gold_sources))
+    ]
     if missing:
         raise ValueError(f"incomplete human-verified gold items: {missing[:10]}")
