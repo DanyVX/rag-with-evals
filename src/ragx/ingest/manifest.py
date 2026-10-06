@@ -11,8 +11,9 @@ class ManifestEntry(BaseModel):
 
 
 class IngestManifest(BaseModel):
-    version: int = 1
+    version: int = 2
     files: dict[str, str]
+    chunk_config_hash: str | None = None
 
 
 def load_manifest(path: str | Path) -> IngestManifest:
