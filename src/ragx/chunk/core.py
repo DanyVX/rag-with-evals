@@ -13,7 +13,7 @@ from ragx.ingest.models import Document
 class ChunkConfig(BaseModel):
     strategy: Literal["fixed", "recursive", "sentence", "structure"] = "fixed"
     size: int = Field(default=256, ge=8)
-    overlap: int = Field(default=32, ge=0)
+    overlap: int = Field(default=0, ge=0)
     prepend_section: bool = False
 
 
