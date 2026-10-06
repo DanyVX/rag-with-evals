@@ -28,6 +28,10 @@ def main() -> None:
     if len(rows) < args.count:
         raise ValueError(f"need at least {args.count} completed first reviews; found {len(rows)}")
 
+    for row in rows:
+        if not row["first_review_date"].strip():
+            raise ValueError(f"missing first_review_date for {row['id']}")
+
     rng = random.Random(SEED)
     sample = rng.sample(rows, args.count)
     fields = [
@@ -36,6 +40,7 @@ def main() -> None:
         "first_status",
         "first_answer",
         "first_gold_chunk_ids",
+        "first_review_date",
         "second_status",
         "second_answer",
         "second_gold_chunk_ids",
@@ -55,6 +60,7 @@ def main() -> None:
                     "first_answer": row["human_gold_answer"].strip() or row["generated_answer"],
                     "first_gold_chunk_ids": row["human_gold_chunk_ids"].strip()
                     or row["gold_chunk_ids"],
+                    "first_review_date": row["first_review_date"].strip(),
                 }
             )
     print(f"wrote deterministic {args.count}-item re-review sample to {args.output}")
