@@ -90,6 +90,7 @@ def ask(request: AskRequest) -> AskResponse:
             for hit in result.retrieved
         ],
         timing_ms={
+            "preprocess": result.preprocess_ms,
             "retrieval": result.retrieval_ms,
             "rerank": result.rerank_ms,
             "generation": result.generation_ms,
