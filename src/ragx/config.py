@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -42,6 +43,13 @@ class Settings(BaseSettings):
     score_floor: float | None = Field(default=None, alias="RAGX_SCORE_FLOOR")
     reranker_model: str | None = Field(default=None, alias="RAGX_RERANKER_MODEL")
 
+    @property
+    def zero_cost_local_endpoint(self) -> bool:
+        if self.provider != "openai-compatible" or not self.openai_base_url:
+            return False
+        host = (urlparse(self.openai_base_url).hostname or "").lower()
+        return host in {"localhost", "127.0.0.1", "::1"}
+
     @model_validator(mode="after")
     def validate_runtime(self) -> "Settings":
         if self.max_spend_usd < 0:
@@ -58,15 +66,21 @@ class Settings(BaseSettings):
             raise ValueError("RAGX_RETRIEVER must be dense, bm25, or hybrid")
         if self.provider not in {"mock", "openai-compatible", "anthropic"}:
             raise ValueError("RAGX_PROVIDER must be mock, openai-compatible, or anthropic")
-        if self.provider != "mock" and self.max_spend_usd <= 0:
-            raise ValueError("remote providers require a positive RAGX_MAX_SPEND_USD")
-        if self.provider != "mock" and (
+
+        remote_paid = self.provider != "mock" and not self.zero_cost_local_endpoint
+        if remote_paid and self.max_spend_usd <= 0:
+            raise ValueError("remote paid providers require a positive RAGX_MAX_SPEND_USD")
+        if remote_paid and (
             self.provider_input_usd_per_million <= 0
             or self.provider_output_usd_per_million <= 0
         ):
             raise ValueError(
-                "remote providers require explicit positive input/output token prices"
+                "remote paid providers require explicit positive input/output token prices"
             )
+        if self.provider == "anthropic" and not self.anthropic_api_key:
+            raise ValueError("ANTHROPIC_API_KEY is required for the Anthropic provider")
+        if self.provider == "openai-compatible" and not self.openai_base_url:
+            raise ValueError("OPENAI_BASE_URL is required for the OpenAI-compatible provider")
         return self
 
 
