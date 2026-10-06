@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RAGX evaluation item",
+  "type": "object",
+  "required": ["id", "question", "question_type", "answerable", "split", "gold_chunk_ids"],
+  "properties": {
+    "id": {"type": "string"},
+    "question": {"type": "string"},
+    "question_type": {
+      "enum": ["single_hop", "multi_hop", "numeric", "factoid", "list", "unanswerable"]
+    },
+    "answerable": {"type": "boolean"},
+    "split": {"enum": ["synthetic", "human_verified"]},
+    "gold_chunk_ids": {"type": "array", "items": {"type": "string"}},
+    "gold_answer": {"type": ["string", "null"]},
+    "ambiguous": {"type": "boolean", "default": false},
+    "notes": {"type": ["string", "null"]}
+  }
+}
