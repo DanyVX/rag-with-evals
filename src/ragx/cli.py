@@ -93,3 +93,11 @@ def experiment(dataset: Path, index_path: Path = Path("cache/index.json"), k: in
         ExperimentConfig(str(index_path), str(dataset), k), Path("results")
     )
     typer.echo(f"{'Reused' if cached else 'Wrote'} {output}")
+
+
+@app.command()
+def serve(host: str = "127.0.0.1", port: int = 8000) -> None:
+    """Run the thin API locally with the offline-safe default configuration."""
+    import uvicorn
+
+    uvicorn.run("ragx.api:app", host=host, port=port)

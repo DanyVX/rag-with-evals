@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from ragx.api import AskRequest, ask
 from ragx.pipeline import answer, build_index, load_index
 
 
@@ -15,3 +16,5 @@ def test_pipeline_persists_retrieves_and_abstains(tmp_path: Path) -> None:
     response, hits = answer(load_index(index), "missing")
     assert response == "not found in the provided documents"
     assert hits == []
+    payload = ask(AskRequest(query="pip", index_path=index))
+    assert payload["citations"] == [1]

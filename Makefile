@@ -22,7 +22,7 @@ bench:
 	uv run ragx benchmark
 
 run:
-	uv run ragx --help
+	uv run ragx serve
 
 docker-build:
 	@echo Docker support is intentionally deferred; use the local baseline.
