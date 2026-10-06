@@ -7,8 +7,11 @@ def _doc(text: str) -> Document:
 
 
 def test_chunk_ids_are_stable() -> None:
-    doc = _doc("one two three four five six seven eight nine ten")
-    config = ChunkConfig(strategy="fixed", size=4, overlap=1)
+    doc = _doc(
+        "one two three four five six seven eight nine ten "
+        "eleven twelve thirteen fourteen fifteen sixteen"
+    )
+    config = ChunkConfig(strategy="fixed", size=8, overlap=1)
     a = chunk_document(doc, config)
     b = chunk_document(doc, config)
     assert [x.id for x in a] == [x.id for x in b]
