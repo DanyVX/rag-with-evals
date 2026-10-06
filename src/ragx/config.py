@@ -45,6 +45,7 @@ class Settings(BaseSettings):
         default="v1", alias="RAGX_EMBEDDING_PREPROCESS_VERSION"
     )
     retriever: str = Field(default="hybrid", alias="RAGX_RETRIEVER")
+    query_preprocess: str = Field(default="none", alias="RAGX_QUERY_PREPROCESS")
     retrieve_top_n: int = Field(default=20, alias="RAGX_RETRIEVE_TOP_N")
     top_k: int = Field(default=5, alias="RAGX_TOP_K")
     score_floor: float | None = Field(default=None, alias="RAGX_SCORE_FLOOR")
@@ -71,6 +72,10 @@ class Settings(BaseSettings):
             raise ValueError("RAGX_TOP_K cannot exceed RAGX_RETRIEVE_TOP_N")
         if self.retriever not in {"dense", "bm25", "hybrid"}:
             raise ValueError("RAGX_RETRIEVER must be dense, bm25, or hybrid")
+        if self.query_preprocess not in {"none", "lowercase", "query_expansion"}:
+            raise ValueError(
+                "RAGX_QUERY_PREPROCESS must be none, lowercase, or query_expansion"
+            )
         if self.provider not in {"mock", "openai-compatible", "anthropic"}:
             raise ValueError("RAGX_PROVIDER must be mock, openai-compatible, or anthropic")
 
