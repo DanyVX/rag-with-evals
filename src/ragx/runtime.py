@@ -62,6 +62,11 @@ class RAGRuntime:
     def _build_provider(self):
         settings = self.settings
         if settings.provider == "mock":
+            if not settings.allow_mock_api:
+                raise RuntimeError(
+                    "RAGX_PROVIDER=mock is disabled for the API; configure a real provider "
+                    "or explicitly set RAGX_ALLOW_MOCK_API=true for tests."
+                )
             return MockProvider()
         if settings.provider == "anthropic":
             assert settings.anthropic_api_key is not None
