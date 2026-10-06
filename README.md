@@ -44,6 +44,17 @@ For the complete offline workflow and evaluation dataset format, see [docs/REPRO
 
 The initial local index is deliberately CPU-first and file-backed; Docker is not available in the discovered environment. See [docs/DESIGN.md](docs/DESIGN.md) for the full decision log and [docs/LIMITATIONS.md](docs/LIMITATIONS.md) for current limits.
 
+## Limitations
+
+This v0.1.0 release is an offline BM25 baseline, not a measured claim about dense retrieval or LLM answer quality. It makes no benchmark-quality assertion until a licensed corpus, human-verified dataset, and measured result artifacts are available. Remote provider adapters, dense retrieval, reranking, and PDF extraction require optional integrations and their own reproducible evaluation runs.
+
+## Roadmap
+
+- Add license-recorded Python documentation downloader with checksums and incremental manifests.
+- Add dense, hybrid, and reranking adapters behind the current retrieval boundary.
+- Add provider adapters with recorded fixtures and cost accounting, then compare configurations using the experiment runner.
+- Publish only measured corpus-specific results with confidence intervals and human-reviewed labels.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

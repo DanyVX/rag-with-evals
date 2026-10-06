@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rag-with-evals"
-version = "0.0.1"
+version = "0.1.0"
 description = "A modular RAG system built to measure retrieval and generation quality honestly."
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
