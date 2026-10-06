@@ -7,6 +7,7 @@ from time import perf_counter
 from ragx.chunk.core import Chunk
 from ragx.config import Settings
 from ragx.cost import CostTracker
+from ragx.embed.cache import CachedEmbedder, EmbeddingCache
 from ragx.embed.sentence_transformer import SentenceTransformerEmbedder
 from ragx.generate.anthropic_provider import AnthropicProvider
 from ragx.generate.providers import MockProvider, OpenAICompatibleProvider
@@ -44,7 +45,12 @@ class RAGRuntime:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.chunks = _load_chunks(settings.chunks_path)
-        self.embedder = SentenceTransformerEmbedder(settings.embedding_model)
+        base_embedder = SentenceTransformerEmbedder(settings.embedding_model)
+        self.embedder = CachedEmbedder(
+            base_embedder,
+            EmbeddingCache(settings.embedding_cache_path),
+            preprocess_version=settings.embedding_preprocess_version,
+        )
         self.store = FaissSQLiteStore(settings.index_dir, settings.embedding_model)
         if self.store.size() == 0:
             raise RuntimeError(
@@ -149,6 +155,8 @@ class RAGRuntime:
             "chunks": len(self.chunks),
             "index_size": self.store.size(),
             "embedding_model": self.settings.embedding_model,
+            "embedding_cache_path": str(self.settings.embedding_cache_path),
+            "embedding_preprocess_version": self.settings.embedding_preprocess_version,
             "retriever": self.settings.retriever,
             "reranker": self.settings.reranker_model,
             "provider": self.provider.provider_id,
